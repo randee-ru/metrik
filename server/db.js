@@ -1,7 +1,8 @@
 /**
  * SQLite: сайты, визиты, цели, конверсии, сквозная аналитика
  * (первое касание, сделки/выручка, расходы на рекламу).
- * Файл базы: ../data/analytics.db
+ * Файл базы: analytics.db в каталоге данных (по умолчанию ../data).
+ * Переменная METRIK_DATA_DIR — абсолютный путь к каталогу для второго экземпляра на сервере.
  */
 import Database from "better-sqlite3";
 import { fileURLToPath } from "url";
@@ -9,7 +10,9 @@ import { dirname, join } from "path";
 import { mkdirSync } from "fs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const dataDir = join(__dirname, "..", "data");
+const dataDir = process.env.METRIK_DATA_DIR
+  ? process.env.METRIK_DATA_DIR.replace(/\/+$/, "")
+  : join(__dirname, "..", "data");
 mkdirSync(dataDir, { recursive: true });
 const dbPath = join(dataDir, "analytics.db");
 

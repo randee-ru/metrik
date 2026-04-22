@@ -57,6 +57,30 @@ PORT=8080 npm run start
 
 Откройте в браузере `http://localhost:3847` (или ваш хост и порт).
 
+### Несколько экземпляров на одном сервере (например, в `/opt`)
+
+У каждого процесса свой **порт** и свой каталог данных (SQLite), иначе база повредится.
+
+**Вариант A — два клона репозитория:**
+
+```bash
+cd /opt
+git clone https://github.com/randee-ru/metrik.git metrik
+git clone https://github.com/randee-ru/metrik.git metrik-b2b
+cd metrik-b2b && npm ci && npm run dashboard:build
+PORT=3848 NODE_ENV=production npm run start
+```
+
+**Вариант B — один каталог с кодом, разные данные** (переменная `METRIK_DATA_DIR`):
+
+```bash
+export METRIK_DATA_DIR=/var/lib/metrik/instance2
+export PORT=3848
+NODE_ENV=production npm run start
+```
+
+В скрипте на сайте в `src` укажите URL и порт того экземпляра, куда должны уходить события.
+
 ## Встраивание на сайт
 
 1. В панели создайте сайт и скопируйте **ключ** (`tracking_key`).

@@ -1,93 +1,137 @@
-# Metrik
+# Метрик — аналитика для своих сайтов
 
+Сервис сбора статистики: скрипт на сайт, SQLite, панель — **все сайты**, детализация, **цели и CR**, базовая **сквозная аналитика** (сделки, расходы, ROI/ROAS по `utm_campaign`, первое касание). Полный Roistat (коллтрекинг, встроенная CRM, ставки в Директе) не дублируется — зато есть API для выгрузки сделок и расходов из ваших систем.
 
+## Возможности
 
-## Getting started
+- **Встраивание одной строкой** — `tracker.js` и ключ `data-site`.
+- **Обзор «все сайты»** — таблица: визиты, посетители, сессии, срабатывания целей, конверсия по посетителям.
+- **Посетитель и сессия** — скрипт сохраняет в `localStorage` на домене **вашего** сайта стабильный `visitor_id` и `session_id` (сессия обновляется при активности, таймаут 30 минут).
+- **Цели (конверсии)** — условие по URL страницы: «содержит», «начинается с» или «равен»; при совпадении фиксируется достижение цели. **CR** = доля уникальных посетителей, у которых была хотя бы одна конверсия в периоде.
+- **Сквозная аналитика (раздел панели):** сделки с суммой и привязкой к `utm_campaign`, расходы на рекламу за интервал дат, отчёт по кампаниям (визиты, конверсии, выручка, расход, **ROAS**, **ROI**, **CPA**), группы каналов (эвристика по UTM/рефереру), таблица **первого касания** посетителя (first-touch по UTM для новых `visitor_id`).
+- **С каждого просмотра:** `path`, `title`, `referrer`, **UTM**, язык, экран, **User-Agent**.
+- **На сервере:** IP (прокси-заголовки), **гео по IP** (`geoip-lite`), разбор UA: браузер, ОС, тип устройства.
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+## Требования
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+- **Node.js** версии 18 или новее (нужен встроенный `crypto.randomUUID`).
+- Для сборки панели — npm.
 
-## Add your files
+## Установка
 
-* [Create](https://docs.gitlab.com/user/project/repository/web_editor/#create-a-file) or [upload](https://docs.gitlab.com/user/project/repository/web_editor/#upload-a-file) files
-* [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
+```bash
+git clone <ваш-репозиторий>
+cd metrik
+npm install
+```
+
+База данных создаётся автоматически в каталоге `data/analytics.db` при первом запуске сервера.
+
+## Запуск для разработки
+
+Одновременно поднимаются API-сервер и панель с горячей перезагрузкой:
+
+```bash
+npm run dev
+```
+
+- **API и скрипт-сборщик:** [http://localhost:3847](http://localhost:3847)  
+- **Панель (Vite):** [http://localhost:5173](http://localhost:5173)  
+
+В режиме разработки запросы с панели к `/api` проксируются на порт `3847`.
+
+## Запуск в продакшене
+
+Сначала соберите панель, затем запустите сервер с переменной `NODE_ENV=production` — тогда интерфейс отдаётся с того же порта, что и API.
+
+```bash
+npm run dashboard:build
+npm run start
+```
+
+По умолчанию порт **3847**. Чтобы сменить:
+
+```bash
+PORT=8080 npm run start
+```
+
+Откройте в браузере `http://localhost:3847` (или ваш хост и порт).
+
+## Встраивание на сайт
+
+1. В панели создайте сайт и скопируйте **ключ** (`tracking_key`).
+2. В HTML перед закрывающим `</body>` вставьте (подставьте свой домен и ключ):
+
+```html
+<script async src="https://analytics.ваш-домен.ru/tracker.js" data-site="ВАШ_КЛЮЧ"></script>
+```
+
+Адрес в `src` должен указывать на **ваш** развёрнутый сервер аналитики. На локальной машине для теста можно использовать `http://localhost:3847/tracker.js` только для страниц с того же компьютера; для реальных сайтов нужен доступный по HTTPS домен.
+
+## API (кратко)
+
+| Метод и путь | Назначение |
+|--------------|------------|
+| `POST /collect` | Приём просмотра. Поля: `site` (ключ), `path`, `title`, `referrer`, `visitor_id`, `session_id`, `user_agent`, экран, `lang`, UTM. |
+| `GET /api/sites` | Список сайтов и ключей. |
+| `POST /api/sites` | Создать проект. Тело: `{ "project_name": "…", "site_url": "https://…" }` (или `name` вместо `project_name`; `site_url` можно пустым). |
+| `PATCH /api/sites/:siteId` | Обновить `project_name` / `name` и/или `site_url` (пустая строка или `null` сбрасывает URL). |
+| `POST /api/sites/:siteId/verify-install` | Проверка HTML: есть ли `tracker.js` и `data-site` с ключом проекта. Тело `{}` или `{ "url": "https://…/page" }` (иначе берётся сохранённый `site_url`). |
+| `GET /api/overview?from=&to=` | Сводка по **всем** сайтам за интервал. |
+| `GET /api/sites/:siteId/summary?from=&to=` | Сводка, цели со статистикой, рефереры, города, журнал визитов. |
+| `GET/POST /api/sites/:siteId/goals` | Список целей / создать цель (`name`, `match_type`, `pattern`). |
+| `DELETE /api/sites/:siteId/goals/:goalId` | Удалить цель и связанные конверсии. |
+| `GET /api/sites/:siteId/cross-analytics?from=&to=` | Сквозной отчёт: по кампаниям, каналы, сделки, расходы, первые касания. |
+| `POST /api/sites/:siteId/deals` | Сделка: `amount`, `title`, опционально `utm_*`, `visitor_id`, `created_at`. |
+| `DELETE /api/sites/:siteId/deals/:dealId` | Удалить сделку. |
+| `POST /api/sites/:siteId/ad-spend` | Расход: `name`, `amount`, `from_ts`, `to_ts` (мс), опционально `utm_campaign`. |
+| `DELETE /api/sites/:siteId/ad-spend/:spendId` | Удалить расход. |
+
+Ответы об ошибках в JSON содержат поле `error` с текстом на русском (где применимо).
+
+## Прокси и реальный IP
+
+Если перед Node стоит **nginx**, **Caddy** или балансировщик, настройте передачу IP клиента, например:
+
+- `X-Forwarded-For` — цепочка адресов (берётся первый).
+- или `X-Real-IP`.
+
+Иначе в базу попадёт IP прокси, а геолокация будет неверной.
+
+## Персональные данные и законность
+
+IP-адрес, реферер и User-Agent могут считаться персональными данными. Перед использованием на публичных сайтах оформите **политику конфиденциальности**, при необходимости — **согласие** посетителей (в т.ч. по требованиям 152-ФЗ и GDPR). Геолокация здесь только **по IP**, не GPS; точность «до города» не гарантируется.
+
+## Структура проекта
 
 ```
-cd existing_repo
-git remote add origin http://192.168.42.210/root/metrik.git
-git branch -M main
-git push -uf origin main
+├── server/           — Express: приём событий, цели, API, статика
+├── public/tracker.js — счётчик: визит, visitor_id, session_id
+├── dashboard/        — React-панель (Vite)
+├── data/             — SQLite (не коммитится, в .gitignore)
+├── package.json
+└── README.md
 ```
 
-## Integrate with your tools
+## Скрипты npm
 
-* [Set up project integrations](http://192.168.42.210/root/metrik/-/settings/integrations)
+| Скрипт | Действие |
+|--------|----------|
+| `npm run server` | Только сервер (порт по умолчанию 3847). |
+| `npm run dev` | Сервер + панель в режиме разработки. |
+| `npm run dashboard:build` | Сборка панели в `dashboard/dist`. |
+| `npm run start` | Продакшен: сервер + собранная панель. |
 
-## Collaborate with your team
+## Репозитории
 
-* [Invite team members and collaborators](https://docs.gitlab.com/user/project/members/)
-* [Create a new merge request](https://docs.gitlab.com/user/project/merge_requests/creating_merge_requests/)
-* [Automatically close issues from merge requests](https://docs.gitlab.com/user/project/issues/managing_issues/#closing-issues-automatically)
-* [Enable merge request approvals](https://docs.gitlab.com/user/project/merge_requests/approvals/)
-* [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
+- GitHub: [randee-ru/metrik](https://github.com/randee-ru/metrik)
+- GitLab (внутренняя сеть): укажите свой remote, например `git@192.168.42.210:root/metrik.git`
 
-## Test and Deploy
+## Дальнейшее развитие (идеи)
 
-Use the built-in continuous integration in GitLab.
+- Авторизация в панели и разграничение доступа.
+- Сессии посетителей, цели, воронки, события по кликам.
+- Учёт переходов в SPA (History API).
+- Хранение только хеша IP или обезличивание по политике.
 
-* [Get started with GitLab CI/CD](https://docs.gitlab.com/ci/quick_start/)
-* [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/user/application_security/sast/)
-* [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/topics/autodevops/requirements/)
-* [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/user/clusters/agent/)
-* [Set up protected environments](https://docs.gitlab.com/ci/environments/protected_environments/)
-
-***
-
-# Editing this README
-
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
-
-## Suggestions for a good README
-
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
-
-## Name
-Choose a self-explaining name for your project.
-
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
-
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
-
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
-
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
-
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
-
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
-
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
-
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
-
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
-
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
-
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
-
-## License
-For open source projects, say how it is licensed.
-
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+Лицензия не указана в репозитории — при необходимости добавьте файл `LICENSE` сами.

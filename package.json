@@ -1,6 +1,7 @@
 {
   "name": "site-analytics",
   "version": "0.1.0",
+  "description": "Веб-аналитика: скрипт на сайт, сбор визитов, панель отчётов (SQLite, гео по IP).",
   "private": true,
   "type": "module",
   "scripts": {
